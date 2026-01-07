@@ -1,37 +1,73 @@
 package escom.ipn.m.ui.screens
 
-import android. Manifest
-import android. content.Context
+import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx. activity.result.contract.ActivityResultContracts
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
-import androidx.compose. animation.core.*
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation. shape.RoundedCornerShape
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw. clip
-import androidx. compose.ui.draw.scale
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui. platform.LocalContext
-import androidx.compose. ui.res.painterResource
-import androidx.compose. ui.text.font.FontWeight
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit. dp
-import androidx. compose.ui.unit.sp
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
-import escom.ipn. m.R
-import escom.ipn.m.data. model.LocationData
+import escom.ipn.m.R
 import escom.ipn.m.data.storage.LocationStorage
-import escom. ipn.m. ui.theme.*
+import escom.ipn.m.ui.theme.AccuracyExcellent
+import escom.ipn.m.ui.theme.AccuracyGood
+import escom.ipn.m.ui.theme.AccuracyLow
+import escom.ipn.m.ui.theme.AccuracyModerate
+import escom.ipn.m.ui.theme.TrackingActive
+import escom.ipn.m.ui.theme.TrackingInactive
 import java.text.SimpleDateFormat
-import java.util.*
+import java.util.Date
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -44,22 +80,20 @@ fun HomeScreen(
     onStartTracking: () -> Unit,
     onStopTracking: () -> Unit,
     onNavigateToHistory: () -> Unit,
-    onNavigateToSettings:  () -> Unit
+    onNavigateToSettings:  () -> Unit,
+    onNavigateToMap: () -> Unit
 ) {
     val context = LocalContext.current
     var hasLocationPermission by remember { mutableStateOf(checkLocationPermission(context)) }
     var hasNotificationPermission by remember { mutableStateOf(checkNotificationPermission(context)) }
-    var showPermissionDialog by remember { mutableStateOf(false) }
 
-    // Launcher para permisos de ubicación
     val locationPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts. RequestMultiplePermissions()
+        contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         hasLocationPermission = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
                 permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
     }
 
-    // Launcher para permiso de notificaciones
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
@@ -80,16 +114,23 @@ fun HomeScreen(
                     titleContentColor = MaterialTheme.colorScheme.onPrimary
                 ),
                 actions = {
+                    IconButton(onClick = onNavigateToMap) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_map),
+                            contentDescription = "Mapa",
+                            tint = MaterialTheme.colorScheme.onPrimary
+                        )
+                    }
                     IconButton(onClick = onNavigateToHistory) {
                         Icon(
-                            painter = painterResource(id = R.drawable.ic_history),
+                            painter = painterResource(id = R. drawable.ic_history),
                             contentDescription = "Historial",
                             tint = MaterialTheme.colorScheme.onPrimary
                         )
                     }
                     IconButton(onClick = onNavigateToSettings) {
                         Icon(
-                            painter = painterResource(id = R.drawable.ic_settings),
+                            painter = painterResource(id = R. drawable.ic_settings),
                             contentDescription = "Configuración",
                             tint = MaterialTheme.colorScheme.onPrimary
                         )
@@ -105,12 +146,10 @@ fun HomeScreen(
                 .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Indicador de estado del rastreo
             TrackingStatusIndicator(isTracking = isTrackingEnabled)
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Tarjeta de ubicación actual
             LocationCard(
                 latitude = currentLatitude,
                 longitude = currentLongitude,
@@ -119,17 +158,16 @@ fun HomeScreen(
                 isTracking = isTrackingEnabled
             )
 
-            Spacer(modifier = Modifier. height(24.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
-            // Botón de inicio/detener rastreo
             TrackingButton(
                 isTracking = isTrackingEnabled,
                 hasPermission = hasLocationPermission,
                 onClick = {
                     if (! hasLocationPermission) {
-                        locationPermissionLauncher.launch(
+                        locationPermissionLauncher. launch(
                             arrayOf(
-                                Manifest. permission.ACCESS_FINE_LOCATION,
+                                Manifest.permission.ACCESS_FINE_LOCATION,
                                 Manifest.permission.ACCESS_COARSE_LOCATION
                             )
                         )
@@ -145,16 +183,33 @@ fun HomeScreen(
                 }
             )
 
-            Spacer(modifier = Modifier. height(16.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-            // Mensaje de permisos
+            // Botón para ver mapa
+            if (currentLatitude != 0.0 && currentLongitude != 0.0) {
+                OutlinedButton(
+                    onClick = onNavigateToMap,
+                    modifier = Modifier. fillMaxWidth(),
+                    shape = RoundedCornerShape(28.dp)
+                ) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_map),
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Ver en Mapa")
+                }
+            }
+
             if (! hasLocationPermission) {
+                Spacer(modifier = Modifier.height(16.dp))
                 PermissionWarningCard(
                     message = "Se requieren permisos de ubicación para rastrear",
                     onClick = {
                         locationPermissionLauncher.launch(
                             arrayOf(
-                                Manifest. permission.ACCESS_FINE_LOCATION,
+                                Manifest.permission.ACCESS_FINE_LOCATION,
                                 Manifest.permission.ACCESS_COARSE_LOCATION
                             )
                         )
@@ -164,7 +219,6 @@ fun HomeScreen(
 
             Spacer(modifier = Modifier.weight(1f))
 
-            // Estadísticas rápidas
             QuickStatsCard(context = context)
         }
     }
@@ -184,7 +238,7 @@ fun TrackingStatusIndicator(isTracking:  Boolean) {
         targetValue = if (isTracking) 1.2f else 1f,
         animationSpec = infiniteRepeatable(
             animation = tween(1000),
-            repeatMode = RepeatMode.Reverse
+            repeatMode = RepeatMode. Reverse
         ),
         label = "scale"
     )
@@ -195,7 +249,7 @@ fun TrackingStatusIndicator(isTracking:  Boolean) {
     ) {
         Box(
             modifier = Modifier
-                . size(16.dp)
+                .size(16.dp)
                 .scale(if (isTracking) scale else 1f)
                 .clip(CircleShape)
                 .background(color)
@@ -205,7 +259,7 @@ fun TrackingStatusIndicator(isTracking:  Boolean) {
             text = if (isTracking) "Rastreo Activo" else "Rastreo Inactivo",
             style = MaterialTheme. typography.titleMedium,
             color = color,
-            fontWeight = FontWeight.SemiBold
+            fontWeight = FontWeight. SemiBold
         )
     }
 }
@@ -221,7 +275,7 @@ fun LocationCard(
     Card(
         modifier = Modifier. fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        elevation = CardDefaults. cardElevation(defaultElevation = 4.dp)
     ) {
         Column(
             modifier = Modifier
@@ -231,40 +285,37 @@ fun LocationCard(
         ) {
             Text(
                 text = "📍 Ubicación Actual",
-                style = MaterialTheme. typography.titleLarge,
-                fontWeight = FontWeight. Bold,
-                color = MaterialTheme. colorScheme.primary
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
             )
 
             Spacer(modifier = Modifier. height(16.dp))
 
             if (latitude != 0.0 || longitude != 0.0) {
-                // Coordenadas
-                CoordinateRow(label = "Latitud", value = "%. 6f". format(latitude))
+                CoordinateRow(label = "Latitud", value = String.format(Locale.US, "%.6f", latitude))
                 Spacer(modifier = Modifier.height(8.dp))
-                CoordinateRow(label = "Longitud", value = "%.6f".format(longitude))
+                CoordinateRow(label = "Longitud", value = String.format(Locale.US, "%.6f", longitude))
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier. height(16.dp))
 
-                // Precisión
                 AccuracyIndicator(accuracy = accuracy)
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier. height(12.dp))
 
-                // Última actualización
                 if (timestamp > 0) {
-                    val sdf = SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.getDefault())
+                    val sdf = SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale. getDefault())
                     Text(
                         text = "Última actualización: ${sdf.format(Date(timestamp))}",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme. onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             } else {
                 Text(
                     text = if (isTracking) "Obteniendo ubicación..." else "Inicia el rastreo para ver tu ubicación",
                     style = MaterialTheme.typography.bodyLarge,
-                    textAlign = TextAlign. Center,
+                    textAlign = TextAlign.Center,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -273,20 +324,20 @@ fun LocationCard(
 }
 
 @Composable
-fun CoordinateRow(label: String, value: String) {
+fun CoordinateRow(label: String, value:  String) {
     Row(
-        modifier = Modifier. fillMaxWidth(),
-        horizontalArrangement = Arrangement. SpaceBetween
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Text(
             text = label,
             style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme. colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Text(
             text = value,
             style = MaterialTheme.typography.bodyLarge,
-            fontWeight = FontWeight. SemiBold,
+            fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurface
         )
     }
@@ -313,7 +364,7 @@ fun AccuracyIndicator(accuracy:  Float) {
     ) {
         Text(
             text = "Precisión:",
-            style = MaterialTheme.typography. bodyMedium
+            style = MaterialTheme.typography.bodyMedium
         )
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
@@ -324,7 +375,7 @@ fun AccuracyIndicator(accuracy:  Float) {
             )
             Spacer(modifier = Modifier.width(8.dp))
             Text(
-                text = "$description (${"%.1f".format(accuracy)}m)",
+                text = "$description (${String.format(Locale.US, "%.1f", accuracy)}m)",
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight. SemiBold,
                 color = color
@@ -335,15 +386,15 @@ fun AccuracyIndicator(accuracy:  Float) {
 
 @Composable
 fun TrackingButton(
-    isTracking: Boolean,
+    isTracking:  Boolean,
     hasPermission: Boolean,
     onClick: () -> Unit
 ) {
     val buttonColor by animateColorAsState(
         targetValue = if (isTracking)
-            MaterialTheme.colorScheme. error
+            MaterialTheme.colorScheme.error
         else
-            MaterialTheme.colorScheme. primary,
+            MaterialTheme.colorScheme.primary,
         animationSpec = tween(300),
         label = "buttonColor"
     )
@@ -354,7 +405,7 @@ fun TrackingButton(
             .fillMaxWidth()
             .height(56.dp),
         shape = RoundedCornerShape(28.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = buttonColor)
+        colors = ButtonDefaults. buttonColors(containerColor = buttonColor)
     ) {
         Icon(
             painter = painterResource(
@@ -370,8 +421,8 @@ fun TrackingButton(
                 isTracking -> "Detener Rastreo"
                 else -> "Iniciar Rastreo"
             },
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight. Bold
+            style = MaterialTheme. typography.titleMedium,
+            fontWeight = FontWeight.Bold
         )
     }
 }
@@ -384,14 +435,14 @@ fun PermissionWarningCard(
     Card(
         modifier = Modifier. fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
+        colors = CardDefaults. cardColors(
             containerColor = AccuracyModerate.copy(alpha = 0.1f)
         ),
         onClick = onClick
     ) {
         Row(
             modifier = Modifier
-                .fillMaxWidth()
+                . fillMaxWidth()
                 .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -402,7 +453,7 @@ fun PermissionWarningCard(
             Spacer(modifier = Modifier.width(12.dp))
             Text(
                 text = message,
-                style = MaterialTheme. typography.bodyMedium,
+                style = MaterialTheme.typography.bodyMedium,
                 color = AccuracyModerate
             )
         }
@@ -412,16 +463,16 @@ fun PermissionWarningCard(
 @Composable
 fun QuickStatsCard(context: Context) {
     val locationStorage = remember { LocationStorage(context) }
-    val locationsCount = remember { mutableIntStateOf(locationStorage.getLocationsCount()) }
+    var locationsCount by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(Unit) {
-        locationsCount.intValue = locationStorage.getLocationsCount()
+        locationsCount = locationStorage.getLocationsCount()
     }
 
     Card(
-        modifier = Modifier. fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults. cardColors(
+        colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant
         )
     ) {
@@ -432,7 +483,7 @@ fun QuickStatsCard(context: Context) {
             horizontalArrangement = Arrangement.SpaceAround
         ) {
             StatItem(
-                value = "${locationsCount.intValue}",
+                value = "$locationsCount",
                 label = "Ubicaciones\nregistradas"
             )
         }
@@ -440,7 +491,7 @@ fun QuickStatsCard(context: Context) {
 }
 
 @Composable
-fun StatItem(value: String, label: String) {
+fun StatItem(value:  String, label: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
             text = value,
@@ -450,26 +501,26 @@ fun StatItem(value: String, label: String) {
         )
         Text(
             text = label,
-            style = MaterialTheme. typography.bodySmall,
-            textAlign = TextAlign. Center,
-            color = MaterialTheme. colorScheme.onSurfaceVariant
+            style = MaterialTheme.typography.bodySmall,
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }
 
 private fun checkLocationPermission(context: Context): Boolean {
-    return ContextCompat. checkSelfPermission(
+    return ContextCompat.checkSelfPermission(
         context,
-        Manifest. permission.ACCESS_FINE_LOCATION
+        Manifest.permission.ACCESS_FINE_LOCATION
     ) == PackageManager.PERMISSION_GRANTED ||
-            ContextCompat. checkSelfPermission(
+            ContextCompat.checkSelfPermission(
                 context,
-                Manifest. permission.ACCESS_COARSE_LOCATION
+                Manifest.permission.ACCESS_COARSE_LOCATION
             ) == PackageManager.PERMISSION_GRANTED
 }
 
 private fun checkNotificationPermission(context: Context): Boolean {
-    return if (Build.VERSION. SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         ContextCompat.checkSelfPermission(
             context,
             Manifest.permission.POST_NOTIFICATIONS

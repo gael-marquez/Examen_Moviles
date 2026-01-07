@@ -1,32 +1,40 @@
 package escom.ipn.m.service
 
-import android. app.Notification
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import android.os.Looper
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
-import com.google.android.gms.location.*
+import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
 import escom.ipn.m.MainActivity
-import escom. ipn.m.R
+import escom.ipn.m.R
 import escom.ipn.m.data.model.LocationData
 import escom.ipn.m.data.preferences.PreferencesManager
-import escom. ipn.m.data.preferences.TrackingInterval
+import escom.ipn.m.data.preferences.TrackingInterval
 import escom.ipn.m.data.storage.LocationStorage
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
-/**
- * Servicio en Foreground para rastreo continuo de ubicación
- */
-class LocationService :  Service() {
+class LocationService : Service() {
 
     companion object {
         const val TAG = "LocationService"
@@ -34,13 +42,11 @@ class LocationService :  Service() {
         const val CHANNEL_ID = "gps_tracker_channel"
         const val CHANNEL_NAME = "Rastreo GPS"
 
-        // Acciones del servicio
         const val ACTION_START = "ACTION_START_TRACKING"
         const val ACTION_STOP = "ACTION_STOP_TRACKING"
         const val ACTION_UPDATE_INTERVAL = "ACTION_UPDATE_INTERVAL"
 
-        // Broadcast para actualizar UI
-        const val BROADCAST_LOCATION_UPDATE = "escom.ipn. m.LOCATION_UPDATE"
+        const val BROADCAST_LOCATION_UPDATE = "escom.ipn.m.LOCATION_UPDATE"
         const val EXTRA_LATITUDE = "extra_latitude"
         const val EXTRA_LONGITUDE = "extra_longitude"
         const val EXTRA_ACCURACY = "extra_accuracy"
@@ -53,11 +59,11 @@ class LocationService :  Service() {
     private lateinit var preferencesManager: PreferencesManager
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private var currentInterval: Long = TrackingInterval. INTERVAL_5_MIN.milliseconds
+    private var currentInterval: Long = TrackingInterval.INTERVAL_5_MIN.milliseconds
     private var isTracking = false
 
     override fun onCreate() {
-        super. onCreate()
+        super.onCreate()
         Log.d(TAG, "Servicio creado")
 
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
@@ -78,20 +84,17 @@ class LocationService :  Service() {
         return START_STICKY
     }
 
-    override fun onBind(intent: Intent? ): IBinder? = null
+    override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
-        super. onDestroy()
+        super.onDestroy()
         stopTracking()
         serviceScope.cancel()
         Log.d(TAG, "Servicio destruido")
     }
 
-    /**
-     * Crea el canal de notificación (requerido para Android 8.0+)
-     */
     private fun createNotificationChannel() {
-        if (Build.VERSION. SDK_INT >= Build.VERSION_CODES.O) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 CHANNEL_NAME,
@@ -106,9 +109,6 @@ class LocationService :  Service() {
         }
     }
 
-    /**
-     * Configura el callback de ubicación
-     */
     private fun setupLocationCallback() {
         locationCallback = object : LocationCallback() {
             override fun onLocationResult(locationResult: LocationResult) {
@@ -116,50 +116,41 @@ class LocationService :  Service() {
                     val locationData = LocationData(
                         latitude = location.latitude,
                         longitude = location.longitude,
-                        accuracy = location. accuracy,
+                        accuracy = location.accuracy,
                         timestamp = System.currentTimeMillis(),
                         provider = location.provider ?: "fused"
                     )
 
-                    // Guardar en almacenamiento
                     serviceScope.launch {
-                        locationStorage. saveLocation(locationData)
-                        Log.d(TAG, "Ubicación guardada: ${locationData.getFormattedCoordinates()}")
+                        locationStorage.saveLocation(locationData)
+                        Log.d(TAG, "Ubicación guardada: ${locationData.latitude}, ${locationData.longitude}")
                     }
 
-                    // Enviar broadcast para actualizar UI
                     sendLocationBroadcast(locationData)
-
-                    // Actualizar notificación
                     updateNotification(locationData)
                 }
             }
         }
     }
 
-    /**
-     * Inicia el rastreo de ubicación
-     */
     private fun startTracking() {
         if (isTracking) {
             Log.d(TAG, "Ya se está rastreando")
             return
         }
 
-        // Verificar permisos
         if (ContextCompat.checkSelfPermission(
                 this,
-                android.Manifest. permission.ACCESS_FINE_LOCATION
+                android.Manifest.permission.ACCESS_FINE_LOCATION
             ) != PackageManager.PERMISSION_GRANTED
         ) {
-            Log. e(TAG, "Sin permisos de ubicación")
+            Log.e(TAG, "Sin permisos de ubicación")
             stopSelf()
             return
         }
 
         serviceScope.launch {
-            // Obtener intervalo de preferencias
-            val preferences = preferencesManager.userPreferencesFlow. first()
+            val preferences = preferencesManager.userPreferencesFlow.first()
             currentInterval = preferences.trackingInterval.milliseconds
 
             val locationRequest = LocationRequest.Builder(
@@ -178,24 +169,27 @@ class LocationService :  Service() {
                 )
 
                 isTracking = true
-
-                // Actualizar estado en preferencias
                 preferencesManager.updateTrackingEnabled(true)
 
-                // Iniciar como servicio en foreground
-                startForeground(NOTIFICATION_ID, createNotification(null))
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    ServiceCompat.startForeground(
+                        this@LocationService,
+                        NOTIFICATION_ID,
+                        createNotification(null),
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+                    )
+                } else {
+                    startForeground(NOTIFICATION_ID, createNotification(null))
+                }
 
                 Log.d(TAG, "Rastreo iniciado con intervalo: ${currentInterval}ms")
-            } catch (e:  SecurityException) {
+            } catch (e: SecurityException) {
                 Log.e(TAG, "Error de seguridad: ${e.message}")
                 stopSelf()
             }
         }
     }
 
-    /**
-     * Detiene el rastreo de ubicación
-     */
     private fun stopTracking() {
         if (!isTracking) return
 
@@ -212,29 +206,24 @@ class LocationService :  Service() {
         Log.d(TAG, "Rastreo detenido")
     }
 
-    /**
-     * Actualiza el intervalo de rastreo
-     */
     private fun updateInterval() {
-        if (! isTracking) return
+        if (!isTracking) return
 
         serviceScope.launch {
-            val preferences = preferencesManager.userPreferencesFlow. first()
+            val preferences = preferencesManager.userPreferencesFlow.first()
             val newInterval = preferences.trackingInterval.milliseconds
 
             if (newInterval != currentInterval) {
                 currentInterval = newInterval
-
-                // Reiniciar con nuevo intervalo
                 fusedLocationClient.removeLocationUpdates(locationCallback)
 
                 if (ContextCompat.checkSelfPermission(
                         this@LocationService,
                         android.Manifest.permission.ACCESS_FINE_LOCATION
-                    ) == PackageManager. PERMISSION_GRANTED
+                    ) == PackageManager.PERMISSION_GRANTED
                 ) {
                     val locationRequest = LocationRequest.Builder(
-                        Priority. PRIORITY_HIGH_ACCURACY,
+                        Priority.PRIORITY_HIGH_ACCURACY,
                         currentInterval
                     ).apply {
                         setMinUpdateIntervalMillis(currentInterval / 2)
@@ -253,12 +242,9 @@ class LocationService :  Service() {
         }
     }
 
-    /**
-     * Crea la notificación del servicio
-     */
-    private fun createNotification(location: LocationData? ): Notification {
-        val intent = Intent(this, MainActivity::class. java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent. FLAG_ACTIVITY_CLEAR_TASK
+    private fun createNotification(location: LocationData?): Notification {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
         }
 
         val pendingIntent = PendingIntent.getActivity(
@@ -272,47 +258,40 @@ class LocationService :  Service() {
             action = ACTION_STOP
         }
 
-        val stopPendingIntent = PendingIntent. getService(
+        val stopPendingIntent = PendingIntent.getService(
             this,
             1,
             stopIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent. FLAG_IMMUTABLE
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
         val contentText = location?.let {
-            "📍 ${it. getFormattedCoordinates()}\n⏱ ${it.getFormattedTime()}"
+            "Lat: ${String.format(java.util.Locale.US, "%.4f", it.latitude)}, Lon: ${String.format(java.util.Locale.US, "%.4f", it.longitude)}"
         } ?: "Iniciando rastreo..."
 
-        return NotificationCompat. Builder(this, CHANNEL_ID)
-            .setContentTitle("🛰️ Rastreo GPS Activo")
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("GPS Tracker Activo")
             .setContentText(contentText)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(contentText))
-            .setSmallIcon(R.drawable.ic_location)
+            .setSmallIcon(android.R.drawable.ic_menu_mylocation)
             .setOngoing(true)
             .setContentIntent(pendingIntent)
-            .addAction(R.drawable.ic_stop, "Detener", stopPendingIntent)
+            .addAction(android.R.drawable.ic_media_pause, "Detener", stopPendingIntent)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .build()
     }
 
-    /**
-     * Actualiza la notificación con la nueva ubicación
-     */
     private fun updateNotification(location: LocationData) {
         val notificationManager = getSystemService(NotificationManager::class.java)
         notificationManager.notify(NOTIFICATION_ID, createNotification(location))
     }
 
-    /**
-     * Envía broadcast con la ubicación actualizada
-     */
     private fun sendLocationBroadcast(location: LocationData) {
         val intent = Intent(BROADCAST_LOCATION_UPDATE).apply {
-            putExtra(EXTRA_LATITUDE, location. latitude)
-            putExtra(EXTRA_LONGITUDE, location. longitude)
-            putExtra(EXTRA_ACCURACY, location. accuracy)
-            putExtra(EXTRA_TIMESTAMP, location. timestamp)
+            putExtra(EXTRA_LATITUDE, location.latitude)
+            putExtra(EXTRA_LONGITUDE, location.longitude)
+            putExtra(EXTRA_ACCURACY, location.accuracy)
+            putExtra(EXTRA_TIMESTAMP, location.timestamp)
             setPackage(packageName)
         }
         sendBroadcast(intent)

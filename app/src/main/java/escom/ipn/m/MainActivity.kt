@@ -1,84 +1,89 @@
 package escom.ipn.m
 
-import android.Manifest
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content. IntentFilter
+import android.content.IntentFilter
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Scaffold
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableDoubleStateOf
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import escom.ipn.m.data.preferences.AppTheme
-import escom.ipn.m.data.preferences. PreferencesManager
+import escom.ipn.m.data.preferences.PreferencesManager
+import escom. ipn.m.data.preferences.UserPreferences
 import escom.ipn.m.service.LocationService
 import escom.ipn.m.ui.screens.HistoryScreen
-import escom.ipn.m.ui.screens.HomeScreen
+import escom.ipn. m.ui.screens.HomeScreen
+import escom.ipn.m.ui.screens.MapScreen
 import escom.ipn.m.ui.screens.SettingsScreen
 import escom.ipn.m.ui.theme.GPSTrackerTheme
+import org.osmdroid.config.Configuration
 
 class MainActivity : ComponentActivity() {
 
     private lateinit var preferencesManager: PreferencesManager
 
+    // Estados observables para la ubicación actual
+    private var currentLatitude by mutableDoubleStateOf(0.0)
+    private var currentLongitude by mutableDoubleStateOf(0.0)
+    private var currentAccuracy by mutableFloatStateOf(0f)
+    private var lastUpdateTimestamp by mutableLongStateOf(0L)
+    private var isTrackingActive by mutableStateOf(false)
+
     // Receiver para actualizaciones de ubicación del servicio
     private val locationReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
+        override fun onReceive(context:  Context?, intent: Intent?) {
             intent?.let {
-                val latitude = it.getDoubleExtra(LocationService.EXTRA_LATITUDE, 0.0)
-                val longitude = it.getDoubleExtra(LocationService. EXTRA_LONGITUDE, 0.0)
-                val accuracy = it.getFloatExtra(LocationService.EXTRA_ACCURACY, 0f)
-                val timestamp = it.getLongExtra(LocationService. EXTRA_TIMESTAMP, 0L)
-
-                // Actualizar estado en Compose
-                currentLatitude. doubleValue = latitude
-                currentLongitude.doubleValue = longitude
-                currentAccuracy. floatValue = accuracy
-                lastUpdateTimestamp.longValue = timestamp
+                currentLatitude = it.getDoubleExtra(LocationService.EXTRA_LATITUDE, 0.0)
+                currentLongitude = it.getDoubleExtra(LocationService.EXTRA_LONGITUDE, 0.0)
+                currentAccuracy = it.getFloatExtra(LocationService.EXTRA_ACCURACY, 0f)
+                lastUpdateTimestamp = it.getLongExtra(LocationService. EXTRA_TIMESTAMP, 0L)
+                isTrackingActive = true
             }
         }
     }
-
-    // Estados observables para la ubicación actual
-    private val currentLatitude = mutableDoubleStateOf(0.0)
-    private val currentLongitude = mutableDoubleStateOf(0.0)
-    private val currentAccuracy = mutableFloatStateOf(0f)
-    private val lastUpdateTimestamp = mutableLongStateOf(0L)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        // Configurar OSMDroid
+        Configuration.getInstance().userAgentValue = packageName
+
         preferencesManager = PreferencesManager(this)
 
         setContent {
-            val userPreferences by preferencesManager. userPreferencesFlow
-                .collectAsStateWithLifecycle(
-                    initialValue = escom.ipn. m.data.preferences.UserPreferences()
-                )
+            val userPreferences by preferencesManager.userPreferencesFlow
+                .collectAsStateWithLifecycle(initialValue = UserPreferences())
 
             GPSTrackerTheme(
                 appTheme = userPreferences.theme,
                 darkTheme = userPreferences.isDarkMode
             ) {
                 MainApp(
-                    currentLatitude = currentLatitude.doubleValue,
-                    currentLongitude = currentLongitude.doubleValue,
-                    currentAccuracy = currentAccuracy.floatValue,
-                    lastUpdateTimestamp = lastUpdateTimestamp.longValue,
-                    isTrackingEnabled = userPreferences.isTrackingEnabled,
-                    onStartTracking = { startLocationService() },
-                    onStopTracking = { stopLocationService() }
+                    currentLatitude = currentLatitude,
+                    currentLongitude = currentLongitude,
+                    currentAccuracy = currentAccuracy,
+                    lastUpdateTimestamp = lastUpdateTimestamp,
+                    isTrackingEnabled = isTrackingActive,
+                    onStartTracking = {startLocationService()},
+                    onStopTracking = {stopLocationService()}
                 )
             }
         }
@@ -86,11 +91,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        // Registrar receiver para actualizaciones de ubicación
         val filter = IntentFilter(LocationService.BROADCAST_LOCATION_UPDATE)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES. TIRAMISU) {
-            registerReceiver(locationReceiver, filter, RECEIVER_NOT_EXPORTED)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(locationReceiver, filter,RECEIVER_NOT_EXPORTED)
         } else {
+            @Suppress("UnspecifiedRegisterReceiverFlag")
             registerReceiver(locationReceiver, filter)
         }
     }
@@ -99,7 +104,7 @@ class MainActivity : ComponentActivity() {
         super. onPause()
         try {
             unregisterReceiver(locationReceiver)
-        } catch (e:  Exception) {
+        } catch (e: Exception) {
             e.printStackTrace()
         }
     }
@@ -109,24 +114,26 @@ class MainActivity : ComponentActivity() {
             action = LocationService.ACTION_START
         }
         ContextCompat.startForegroundService(this, serviceIntent)
+        isTrackingActive = true
     }
 
     private fun stopLocationService() {
-        val serviceIntent = Intent(this, LocationService:: class.java).apply {
+        val serviceIntent = Intent(this, LocationService::class.java).apply {
             action = LocationService.ACTION_STOP
         }
         startService(serviceIntent)
+        isTrackingActive = false
     }
 }
 
 @Composable
 fun MainApp(
-    currentLatitude: Double,
+    currentLatitude:  Double,
     currentLongitude: Double,
     currentAccuracy: Float,
-    lastUpdateTimestamp:  Long,
-    isTrackingEnabled:  Boolean,
-    onStartTracking: () -> Unit,
+    lastUpdateTimestamp: Long,
+    isTrackingEnabled: Boolean,
+    onStartTracking:  () -> Unit,
     onStopTracking: () -> Unit
 ) {
     val navController = rememberNavController()
@@ -149,7 +156,8 @@ fun MainApp(
                     onStartTracking = onStartTracking,
                     onStopTracking = onStopTracking,
                     onNavigateToHistory = { navController. navigate("history") },
-                    onNavigateToSettings = { navController.navigate("settings") }
+                    onNavigateToSettings = { navController. navigate("settings") },
+                    onNavigateToMap = { navController.navigate("map") }
                 )
             }
 
@@ -161,6 +169,12 @@ fun MainApp(
 
             composable("settings") {
                 SettingsScreen(
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+
+            composable("map") {
+                MapScreen(
                     onNavigateBack = { navController.popBackStack() }
                 )
             }
